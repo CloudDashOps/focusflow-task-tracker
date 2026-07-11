@@ -11,6 +11,8 @@ backend/tasks.db
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/page-check.png
+frontend/chrome-check.log
 
 # Local environment files
 .env
