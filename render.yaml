@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: minitasktracker-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: minitasktracker-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: web
+    name: minitasktracker-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+
+databases:
+  - name: minitasktracker-db
+    plan: free

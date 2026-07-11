@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local database
+backend/tasks.db
+
+# Frontend dependencies and build files
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local environment files
+.env
+.env.*
