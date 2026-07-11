@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
 from database import Base
+from datetime import datetime
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -10,4 +11,4 @@ class Task(Base):
     category: str = Column(String(50), default="General")
     priority: str = Column(String(20), default="medium")
     due_date = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)

@@ -28,11 +28,14 @@ def migrate_database():
             "category": "ALTER TABLE tasks ADD COLUMN category VARCHAR(50) DEFAULT 'General'",
             "priority": "ALTER TABLE tasks ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'",
             "due_date": "ALTER TABLE tasks ADD COLUMN due_date DATETIME",
-            "created_at": "ALTER TABLE tasks ADD COLUMN created_at DATETIME",
+            "created_at": "ALTER TABLE tasks ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         }
         for name, statement in migrations.items():
             if name not in columns:
-                connection.execute(text(statement))
+                try:
+                    connection.execute(text(statement))
+                except Exception:
+                    pass  # Column might already exist
 
 # Dependency to get DB session
 def get_db():

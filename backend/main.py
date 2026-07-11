@@ -78,8 +78,11 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)) -> TaskResponse
     if not task.title.strip():
         raise HTTPException(status_code=422, detail="Task title cannot be empty")
     new_task = Task(
-        title=task.title.strip(), completed=False, category=task.category or "General",
-        priority=task.priority or "medium", due_date=task.due_date, created_at=datetime.utcnow()
+        title=task.title.strip(),
+        completed=False,
+        category=task.category or "General",
+        priority=task.priority or "medium",
+        due_date=task.due_date
     )
     db.add(new_task)
     db.commit()
