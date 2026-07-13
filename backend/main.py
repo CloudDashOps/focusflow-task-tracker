@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List
 from datetime import datetime
 import os
 
+from auth import authenticate_user, create_access_token, get_current_user, get_password_hash, get_user_by_email
 from database import engine, get_db, Base, migrate_database
-from models import Task
+from models import Task, User
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -59,6 +60,21 @@ class TaskResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+
+    class Config:
+        from_attributes = True
+
 # ============= Endpoints =============
 
 @app.get("/")
@@ -66,14 +82,49 @@ def read_root() -> dict:
     """Health check endpoint"""
     return {"message": "Task Tracker API is running"}
 
+@app.post("/auth/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+def signup(user: UserCreate, db: Session = Depends(get_db)) -> TokenResponse:
+    """Create a new user account"""
+    if len(user.password) < 6:
+        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+    if get_user_by_email(db, user.email):
+        raise HTTPException(status_code=400, detail="A user with that email already exists")
+    new_user = User(
+        email=user.email.lower().strip(),
+        hashed_password=get_password_hash(user.password),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    access_token = create_access_token(data={"sub": new_user.email})
+    return TokenResponse(access_token=access_token)
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(user: UserCreate, db: Session = Depends(get_db)) -> TokenResponse:
+    """Authenticate a user and return a JWT token"""
+    authenticated_user = authenticate_user(db, user.email, user.password)
+    if not authenticated_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(data={"sub": authenticated_user.email})
+    return TokenResponse(access_token=access_token)
+
+@app.get("/auth/me", response_model=UserResponse)
+def read_current_user(current_user: User = Depends(get_current_user)) -> UserResponse:
+    """Get the currently authenticated user"""
+    return current_user
+
 @app.get("/tasks", response_model=List[TaskResponse])
-def get_tasks(db: Session = Depends(get_db)) -> List[TaskResponse]:
-    """Fetch all tasks"""
-    tasks = db.query(Task).all()
+def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> List[TaskResponse]:
+    """Fetch tasks for the authenticated user"""
+    tasks = db.query(Task).filter(Task.user_id == current_user.id).all()
     return tasks
 
 @app.post("/tasks", response_model=TaskResponse)
-def create_task(task: TaskCreate, db: Session = Depends(get_db)) -> TaskResponse:
+def create_task(task: TaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> TaskResponse:
     """Create a new task"""
     if not task.title.strip():
         raise HTTPException(status_code=422, detail="Task title cannot be empty")
@@ -82,7 +133,8 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)) -> TaskResponse
         completed=False,
         category=task.category or "General",
         priority=task.priority or "medium",
-        due_date=task.due_date
+        due_date=task.due_date,
+        user_id=current_user.id,
     )
     db.add(new_task)
     db.commit()
@@ -93,14 +145,14 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)) -> TaskResponse
 def update_task(
     task_id: int,
     task_update: TaskUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> TaskResponse:
     """Toggle completion status or update task"""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == current_user.id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     if task_update.title is not None:
         if not task_update.title.strip():
             raise HTTPException(status_code=422, detail="Task title cannot be empty")
@@ -113,19 +165,19 @@ def update_task(
         task.priority = task_update.priority
     if "due_date" in task_update.model_fields_set:
         task.due_date = task_update.due_date
-    
+
     db.commit()
     db.refresh(task)
     return task
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
     """Delete a task"""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == current_user.id).first()
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     db.delete(task)
     db.commit()
     return {"message": "Task deleted successfully"}

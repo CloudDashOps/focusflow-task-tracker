@@ -2,6 +2,11 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+let authToken = '';
+if (typeof window !== 'undefined' && window.localStorage) {
+  authToken = localStorage.getItem('taskTrackerToken') || '';
+}
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -9,46 +14,52 @@ const apiClient = axios.create({
   },
 });
 
-// Get all tasks
+apiClient.interceptors.request.use((config) => {
+  if (authToken) {
+        config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
+export const setAuthToken = (token) => {
+  authToken = token;
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  if (token) {
+    localStorage.setItem('taskTrackerToken', token);
+  } else {
+    localStorage.removeItem('taskTrackerToken');
+  }
+};
+
+export const signup = async ({ email, password }) => {
+  const response = await apiClient.post('/auth/signup', { email, password });
+  return response.data;
+};
+
+export const login = async ({ email, password }) => {
+  const response = await apiClient.post('/auth/login', { email, password });
+  return response.data;
+};
+
 export const fetchTasks = async () => {
-  try {
-    const response = await apiClient.get('/tasks');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching tasks:', error);
-    throw error;
-  }
+  const response = await apiClient.get('/tasks');
+  return response.data;
 };
 
-// Create a new task
 export const createTask = async (task) => {
-  try {
-    const response = await apiClient.post('/tasks', task);
-    return response.data;
-  } catch (error) {
-    console.error('Error creating task:', error);
-    throw error;
-  }
+  const response = await apiClient.post('/tasks', task);
+  return response.data;
 };
 
-// Update a task (toggle completion or update title)
 export const updateTask = async (taskId, updates) => {
-  try {
-    const response = await apiClient.put(`/tasks/${taskId}`, updates);
-    return response.data;
-  } catch (error) {
-    console.error('Error updating task:', error);
-    throw error;
-  }
+  const response = await apiClient.put(`/tasks/${taskId}`, updates);
+  return response.data;
 };
 
-// Delete a task
 export const deleteTask = async (taskId) => {
-  try {
-    const response = await apiClient.delete(`/tasks/${taskId}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error deleting task:', error);
-    throw error;
-  }
+  const response = await apiClient.delete(`/tasks/${taskId}`);
+  return response.data;
 };
+

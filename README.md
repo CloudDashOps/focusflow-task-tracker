@@ -30,6 +30,8 @@ npm run dev
 
 The app opens at `http://localhost:5173` and the API is available at `http://localhost:8000`.
 
+A new login/signup flow is available, and task operations now use JWT authentication to keep each user’s tasks private.
+
 ## Deploy on Render
 
 This repository includes `render.yaml`, which provisions a FastAPI web service, a Vite static site, and a PostgreSQL database. During the Render Blueprint setup, provide:

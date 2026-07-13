@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createTask, deleteTask, fetchTasks, updateTask } from './api';
+import { createTask, deleteTask, fetchTasks, updateTask, login, signup, setAuthToken } from './api';
 import './App.css';
 
 const blankTask = { title: '', category: 'General', priority: 'medium', due_date: '' };
@@ -17,13 +17,63 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [authMode, setAuthMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [token, setToken] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('taskTrackerToken') || '' : '');
 
-  useEffect(() => { loadTasks(); }, []);
+  useEffect(() => {
+    if (token) {
+      setAuthToken(token);
+      loadTasks();
+    } else {
+      setLoading(false);
+    }
+  }, [token]);
 
   async function loadTasks() {
-    try { setLoading(true); setTasks(await fetchTasks()); }
-    catch { setError('Could not connect to the API. Make sure the backend is running.'); }
-    finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setTasks(await fetchTasks());
+    } catch (error) {
+      if (error.response?.status === 401) {
+        setError('Session expired. Please log in again.');
+        handleLogout();
+      } else {
+        setError('Could not connect to the API. Make sure the backend is running.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    try {
+      setError('');
+      const payload = { email, password };
+      const response = authMode === 'signup' ? await signup(payload) : await login(payload);
+      const accessToken = response.access_token;
+      if (!accessToken) {
+        throw new Error('Authentication failed');
+      }
+      setToken(accessToken);
+      setAuthToken(accessToken);
+      setEmail('');
+      setPassword('');
+      setLoading(true);
+      await loadTasks();
+    } catch (authError) {
+      setError(authError.response?.data?.detail || 'Invalid credentials. Please try again.');
+    }
+  }
+
+  function handleLogout() {
+    setToken('');
+    setAuthToken('');
+    setTasks([]);
+    setAuthMode('login');
+    setLoading(false);
   }
 
   const visibleTasks = useMemo(() => tasks.filter((task) => {
@@ -80,29 +130,46 @@ function App() {
     <section className="dashboard">
       <header className="hero">
         <div><p className="eyebrow">PERSONAL PRODUCTIVITY</p><h1>FocusFlow</h1><p className="subtitle">Turn today’s plans into meaningful progress.</p></div>
-        <div className="date-badge"><span>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date())}</span><strong>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date())}</strong></div>
+        <div>
+          {token && <button className="text-button" onClick={handleLogout}>Log out</button>}
+          <div className="date-badge"><span>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date())}</span><strong>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date())}</strong></div>
+        </div>
       </header>
 
-      <section className="summary-grid">
-        <div className="progress-card"><div><p>Today’s progress</p><strong>{progress}%</strong></div><div className="progress-ring" style={{ '--progress': `${progress * 3.6}deg` }}><span>{completed}/{tasks.length || 0}</span></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div></div>
-        <div className="stat-card"><span className="stat-icon violet">✓</span><div><strong>{completed}</strong><p>Completed</p></div></div>
-        <div className="stat-card"><span className="stat-icon orange">⌁</span><div><strong>{tasks.length - completed}</strong><p>To focus on</p></div></div>
-      </section>
-
-      <section className="panel composer">
-        <div className="panel-heading"><div><h2>{editingId ? 'Edit task' : 'Create a task'}</h2><p>{editingId ? 'Update the details below.' : 'A clear next step makes it easier to begin.'}</p></div>{editingId && <button className="text-button" onClick={() => { setEditingId(null); setForm(blankTask); }}>Cancel edit</button>}</div>
-        <form onSubmit={handleSubmit}>
-          <input className="title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What needs to be done?" maxLength="255" autoFocus />
-          <div className="form-row"><label>Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label><label>Due date<input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></label><button className="primary-button" type="submit">{editingId ? 'Save changes' : '+ Add task'}</button></div>
-        </form>
-      </section>
-
-      <section className="panel tasks-panel">
-        <div className="tasks-toolbar"><div><h2>Your tasks</h2><p>{tasks.length ? `${tasks.length - completed} task${tasks.length - completed === 1 ? '' : 's'} remaining` : 'Your list is ready when you are.'}</p></div><div className="toolbar-actions"><input aria-label="Search tasks" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks" /><button className="text-button" onClick={clearCompleted} disabled={!completed}>Clear completed</button></div></div>
-        <div className="filters">{[['all', 'All'], ['active', 'Active'], ['completed', 'Done'], ['high', 'High priority']].map(([value, label]) => <button className={filter === value ? 'filter active' : 'filter'} key={value} onClick={() => setFilter(value)}>{label}</button>)}</div>
+      {!token ? <section className="panel composer">
+        <div className="panel-heading"><div><h2>{authMode === 'signup' ? 'Sign up to FocusFlow' : 'Log in to FocusFlow'}</h2><p>{authMode === 'signup' ? 'Create an account to save your tasks securely.' : 'Sign in and access your personal task list.'}</p></div></div>
         {error && <div className="error-message">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
-        {loading ? <div className="empty-state">Loading your tasks…</div> : visibleTasks.length ? <ul className="task-list">{visibleTasks.map((task) => <li className={`task-item ${task.completed ? 'done' : ''}`} key={task.id}><button className="check-button" onClick={() => toggleTask(task)} aria-label={`Mark ${task.title} as ${task.completed ? 'active' : 'complete'}`}>{task.completed && '✓'}</button><div className="task-copy"><h3>{task.title}</h3><div className="task-meta"><span>{task.category}</span>{task.due_date && <span className="due-date">Due {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(task.due_date))}</span>}</div></div><span className={`priority ${task.priority}`}>{task.priority}</span><div className="task-actions"><button onClick={() => beginEdit(task)}>Edit</button><button className="delete" onClick={() => removeTask(task.id)}>Delete</button></div></li>)}</ul> : <div className="empty-state"><span>✦</span><h3>No tasks found</h3><p>{search || filter !== 'all' ? 'Try a different filter or search term.' : 'Add your first task and get the day moving.'}</p></div>}
-      </section>
+        <form onSubmit={handleAuthSubmit}>
+          <input className="title-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" maxLength="255" autoFocus />
+          <input className="title-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" minLength="6" />
+          <div className="form-row"><div /><div /><button className="primary-button" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></div>
+        </form>
+        <div className="tasks-toolbar" style={{ marginTop: '14px', justifyContent: 'space-between' }}>
+          <p>{authMode === 'signup' ? 'Already have an account?' : 'New to FocusFlow?'}</p>
+          <button className="text-button" onClick={() => { setAuthMode(authMode === 'signup' ? 'login' : 'signup'); setError(''); }}>{authMode === 'signup' ? 'Switch to log in' : 'Switch to sign up'}</button>
+        </div>
+      </section> : <>
+        <section className="summary-grid">
+          <div className="progress-card"><div><p>Today’s progress</p><strong>{progress}%</strong></div><div className="progress-ring" style={{ '--progress': `${progress * 3.6}deg` }}><span>{completed}/{tasks.length || 0}</span></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div></div>
+          <div className="stat-card"><span className="stat-icon violet">✓</span><div><strong>{completed}</strong><p>Completed</p></div></div>
+          <div className="stat-card"><span className="stat-icon orange">⌁</span><div><strong>{tasks.length - completed}</strong><p>To focus on</p></div></div>
+        </section>
+
+        <section className="panel composer">
+          <div className="panel-heading"><div><h2>{editingId ? 'Edit task' : 'Create a task'}</h2><p>{editingId ? 'Update the details below.' : 'A clear next step makes it easier to begin.'}</p></div>{editingId && <button className="text-button" onClick={() => { setEditingId(null); setForm(blankTask); }}>Cancel edit</button>}</div>
+          <form onSubmit={handleSubmit}>
+            <input className="title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What needs to be done?" maxLength="255" autoFocus />
+            <div className="form-row"><label>Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label><label>Due date<input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></label><button className="primary-button" type="submit">{editingId ? 'Save changes' : '+ Add task'}</button></div>
+          </form>
+        </section>
+
+        <section className="panel tasks-panel">
+          <div className="tasks-toolbar"><div><h2>Your tasks</h2><p>{tasks.length ? `${tasks.length - completed} task${tasks.length - completed === 1 ? '' : 's'} remaining` : 'Your list is ready when you are.'}</p></div><div className="toolbar-actions"><input aria-label="Search tasks" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks" /><button className="text-button" onClick={clearCompleted} disabled={!completed}>Clear completed</button></div></div>
+          <div className="filters">{[['all', 'All'], ['active', 'Active'], ['completed', 'Done'], ['high', 'High priority']].map(([value, label]) => <button className={filter === value ? 'filter active' : 'filter'} key={value} onClick={() => setFilter(value)}>{label}</button>)}</div>
+          {error && <div className="error-message">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
+          {loading ? <div className="empty-state">Loading your tasks…</div> : visibleTasks.length ? <ul className="task-list">{visibleTasks.map((task) => <li className={`task-item ${task.completed ? 'done' : ''}`} key={task.id}><button className="check-button" onClick={() => toggleTask(task)} aria-label={`Mark ${task.title} as ${task.completed ? 'active' : 'complete'}`}>{task.completed && '✓'}</button><div className="task-copy"><h3>{task.title}</h3><div className="task-meta"><span>{task.category}</span>{task.due_date && <span className="due-date">Due {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(task.due_date))}</span>}</div></div><span className={`priority ${task.priority}`}>{task.priority}</span><div className="task-actions"><button onClick={() => beginEdit(task)}>Edit</button><button className="delete" onClick={() => removeTask(task.id)}>Delete</button></div></li>)}</ul> : <div className="empty-state"><span>✦</span><h3>No tasks found</h3><p>{search || filter !== 'all' ? 'Try a different filter or search term.' : 'Add your first task and get the day moving.'}</p></div>}
+        </section>
+      </>}
     </section>
   </main>;
 }
