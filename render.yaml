@@ -12,6 +12,8 @@ services:
         fromDatabase:
           name: minitasktracker-db
           property: connectionString
+      - key: SECRET_KEY
+        sync: false
       - key: CORS_ORIGINS
         sync: false
 
